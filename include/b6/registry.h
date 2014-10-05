@@ -25,7 +25,7 @@
  *   float another_value;
  * };
  *
- * B6_DEFINE_REGISTRY(example_registry);
+ * B6_REGISTRY_DEFINE(example_registry);
  *
  * int register_example(struct example *example, const char *name)
  * {
@@ -38,13 +38,6 @@
  *   return entry ? b6_cast_of(e, struct example, entry) : NULL;
  * }
  * @endcode
- */
-struct b6_registry {
-	struct b6_tree tree;
-};
-
-/**
- * @brief A registry iterator allows traveling entries one by one.
  *
  * A registry can be traveled as follows:
  *
@@ -59,19 +52,16 @@ struct b6_registry {
  *
  * void print_examples(void)
  * {
- *   struct registry_iterator iter;
- *   struct b6_entry *entry;
- *   b6_setup_registry_iterator(&iter, &example_registry);
- *   while ((entry = b6_get_next_registry_iterator(&iter))) {
+ *   struct b6_entry *entry = b6_get_first_entry(&example_registry);
+ *   while ((entry = b6_get_next_entry(&example_registry, entry))) {
  *     struct example *ex = b6_cast_of(entry, struct example, entry);
  *     printf("s=%d a=%f\n", ex->some_value, ex->another_value);
  *   }
  * }
  * @endcode
  */
-struct b6_registry_iterator {
-	const struct b6_tree *tree;
-	const struct b6_tref *tref;
+struct b6_registry {
+	struct b6_tree tree;
 };
 
 /**
@@ -159,32 +149,49 @@ static inline struct b6_entry *b6_lookup_registry(struct b6_registry *self,
 }
 
 /**
- * @brief Initialize a registry iterator.
- * @param self specifies the iterator.
- * @param reg specifies the registry to travel.
+ * @brief Get the first entry of a registry in the sequential order.
+ * @param r specifies the registry
+ * @return a pointer the the entry.
+ * @return NULL is the registry is empty.
  */
-static inline void b6_setup_registry_iterator(struct b6_registry_iterator *self,
-					      const struct b6_registry *reg)
+static inline struct b6_entry *b6_get_first_entry(const struct b6_registry *r)
 {
-	self->tree = &reg->tree;
-	self->tref = b6_tree_first(&reg->tree);
+	struct b6_tref *tref = b6_tree_first(&r->tree);
+	if (tref == b6_tree_tail(&r->tree))
+	       return NULL;
+	return b6_cast_of(tref, struct b6_entry, tref);
 }
 
 /**
- * @brief Get the next entry from the registry iteration.
- * @param self specifies the iterator.
- * @return a pointer to the entry.
+ * @brief Get the last entry of a registry in the sequential order.
+ * @param r specifies the registry
+ * @return a pointer the the entry.
+ * @return NULL is the registry is empty.
+ */
+static inline struct b6_entry *b6_get_last_entry(const struct b6_registry *r)
+{
+	struct b6_tref *tref = b6_tree_last(&r->tree);
+	if (tref == b6_tree_head(&r->tree))
+	       return NULL;
+	return b6_cast_of(tref, struct b6_entry, tref);
+}
+
+/**
+ * @brief Get the next entry of another in the sequential order.
+ * @param r specifies the registry.
+ * @param e specifies an entry of the registry.
+ * @return a pointer to the next entry.
  * @return NULL if the end of the registry has been reached.
  */
-static inline const struct b6_entry *b6_get_next_registry_iterator(
-	struct b6_registry_iterator *self)
+static inline struct b6_entry *b6_walk_registry(const struct b6_registry *r,
+						const struct b6_entry *e,
+						int direction)
 {
-	struct b6_entry *entry = NULL;
-	if (self->tref != b6_tree_tail(self->tree)) {
-		entry = b6_cast_of(self->tref, struct b6_entry, tref);
-		self->tref = b6_tree_walk(self->tree, self->tref, B6_NEXT);
-	}
-	return entry;
+	struct b6_tref *tref = b6_tree_walk(&r->tree, &e->tref, direction);
+	if ((direction == B6_NEXT && tref == b6_tree_tail(&r->tree)) ||
+	    (direction == B6_PREV && tref == b6_tree_head(&r->tree)))
+	       return NULL;
+	return b6_cast_of(tref, struct b6_entry, tref);
 }
 
 #endif /* B6_REGISTRY_H */
