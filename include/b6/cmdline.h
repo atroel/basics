@@ -4,12 +4,12 @@
  */
 
 /**
- * @file flags.h
- * @brief Define and parse command line flags.
+ * @file cmdline.h
+ * @brief Define and parse command line.
  */
 
-#ifndef FLAGS_H
-#define FLAGS_H
+#ifndef CMDLINE_H
+#define CMDLINE_H
 
 #include "b6/registry.h"
 #include "b6/utils.h"
@@ -111,4 +111,36 @@ b6_declare_flag_type(string, const char*);
 
 #undef b6_declare_flag_type
 
-#endif /* FLAGS_H */
+struct b6_cmd {
+	struct b6_entry entry;
+	const struct b6_cmd_ops *ops;
+};
+
+extern struct b6_registry b6_cmd_registry;
+
+struct b6_cmd_ops {
+	int (*exec)(struct b6_cmd*, int argc, char *argv[]);
+};
+
+#define b6_cmd(_fun) \
+	static const struct b6_cmd_ops _fun##_ops = { .exec = _fun, }; \
+	static struct b6_cmd _fun##_cmd = { .ops = &(_fun##_ops), }; \
+	b6_ctor(b6_cmd_register_##_fun); \
+	static void b6_cmd_register_##_fun(void) \
+	{ \
+		b6_register(&b6_cmd_registry, &(_fun##_cmd).entry, #_fun); \
+	} \
+	static void b6_cmd_register_##_fun(void)
+
+static inline struct b6_cmd *b6_lookup_cmd(const char *name)
+{
+	const struct b6_entry *e = b6_lookup_registry(&b6_cmd_registry, name);
+	return e ? b6_cast_of(e, struct b6_cmd, entry) : NULL;
+}
+
+static inline int b6_exec_cmd(struct b6_cmd *self, int argc, char *argv[])
+{
+	return self->ops->exec(self, argc, argv);
+}
+
+#endif /* CMDLINE_H */

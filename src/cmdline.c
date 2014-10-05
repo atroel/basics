@@ -1,4 +1,4 @@
-#include "b6/flags.h"
+#include "b6/cmdline.h"
 
 #include "b6/registry.h"
 
@@ -231,3 +231,5 @@ static int b6_parse_string_flag(struct b6_flag* flag, const char *value)
 const struct b6_flag_ops b6_string_flag_ops = {
 	.parse = b6_parse_string_flag,
 };
+
+B6_REGISTRY_DEFINE(b6_cmd_registry);
