@@ -69,8 +69,9 @@ struct b6_registry {
  */
 struct b6_entry {
 	struct b6_tref tref;
-	unsigned int hash;
-	const char *name;
+	unsigned short int hash;
+	unsigned short int size;
+	const void *name;
 };
 
 /**
@@ -89,34 +90,23 @@ static inline void b6_setup_registry(struct b6_registry *self)
 }
 
 /**
- * @internal
+ * @brief Add an entry to a registry.
+ * @param self specifies the registry to populate.
+ * @param entry specifies the entry to add.
+ * @param name specifies the ascii name of the entry.
  */
-extern struct b6_entry *b6_search_registry(struct b6_registry*, unsigned int,
-					   const char*, struct b6_tref**, int*);
-
-/**
- * @internal
- */
-extern unsigned int b6_compute_registry_hash(const char*);
+extern int b6_register(struct b6_registry *self, struct b6_entry *entry,
+		       const char *name);
 
 /**
  * @brief Add an entry to a registry.
  * @param self specifies the registry to populate.
  * @param entry specifies the entry to add.
- * @param name specifies the name of the entry.
+ * @param name specifies the utf8 name of the entry.
+ * @param size specifies the size in bytes of the name.
  */
-static inline int b6_register(struct b6_registry *self, struct b6_entry *entry,
-			      const char *name)
-{
-	struct b6_tref *top;
-	int dir;
-	entry->hash = b6_compute_registry_hash(name);
-	entry->name = name;
-	if (b6_search_registry(self, entry->hash, entry->name, &top, &dir))
-		return -1;
-	b6_tree_add(&self->tree, top, dir, &entry->tref);
-	return 0;
-}
+extern int b6_register_utf8(struct b6_registry *self, struct b6_entry *entry,
+			    const void *name, unsigned int size);
 
 /**
  * @brief Remove an entry from a registry.
@@ -135,18 +125,24 @@ static inline void b6_unregister(struct b6_registry *self,
 /**
  * @brief Find a registry entry by name.
  * @param self specifies the registry to search.
- * @param name specifies the name of the entry to find.
+ * @param name specifies the ascii name of the entry to find.
  * @return a pointer to the entry.
  * @return NULL if no entry with such a name was found.
  */
-static inline struct b6_entry *b6_lookup_registry(struct b6_registry *self,
-						  const char *name)
-{
-	struct b6_tref *top;
-	int dir;
-	return b6_search_registry(self, b6_compute_registry_hash(name), name,
-				  &top, &dir);
-}
+extern struct b6_entry *b6_lookup_registry(struct b6_registry *self,
+					   const char *name);
+
+/**
+ * @brief Find a registry entry by name.
+ * @param self specifies the registry to search.
+ * @param name specifies the utf8 name of the entry to find.
+ * @param size specifies the size in bytes of the name.
+ * @return a pointer to the entry.
+ * @return NULL if no entry with such a name was found.
+ */
+extern struct b6_entry *b6_lookup_registry_utf8(struct b6_registry *self,
+						const void *name,
+						unsigned long size);
 
 /**
  * @brief Get the first entry of a registry in the sequential order.
