@@ -9,3 +9,4 @@ all clean:
 	@$(MAKE) X="list" SRC="list.c test.c" -f ../build/Makefile $@
 	@$(MAKE) X="tree" SRC="tree.c test.c" -f ../build/Makefile $@
 	@$(MAKE) X="splay" SRC="node.c assert.c splay.c" -f ../build/Makefile $@
+	@$(MAKE) X="utf8" SRC="utf8.c test.c" -f ../build/Makefile $@
