@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, Arnaud TROEL
+ * Copyright (c) 2014-2015, Arnaud TROEL
  * See LICENSE file for license details.
  */
 
