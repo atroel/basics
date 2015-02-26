@@ -1,16 +1,15 @@
-.PHONY: all clean mrproper doc
+.PHONY: all clean static src tst doc
+.NOTPARALLEL: clean
 
-all:
-	@$(MAKE) -C src $@
-	@$(MAKE) -C tst $@
-
-doc:
-	@$(MAKE) -C $@
+all: src
 
 clean:
-	@$(MAKE) -C src $@
-	@$(MAKE) -C tst $@
-	@$(MAKE) -C doc $@
+	+@$(MAKE) -C src $@
+	+@$(MAKE) -C tst $@
+	+@$(MAKE) -C doc $@
 
-mrproper: clean
-	find . -name "*~" -exec rm {} \;
+static:
+	+@$(MAKE) -C src GOALS=libb6.a
+
+src tst doc:
+	+@$(MAKE) -C $@

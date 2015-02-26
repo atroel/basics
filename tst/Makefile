@@ -1,12 +1,8 @@
-export EXTRA_CPPFLAGS=-I../include
-export EXTRA_CFLAGS=-O0 -g3
-export EXTRA_LDFLAGS=-L../src -lb6 -lpthread
+.PHONY: all clean
+.NOTPARALLEL: clean
 
-.PHONY: all clean mrproper
+export CFLAGS=-O0 -ggdb
 
 all clean:
-	@$(MAKE) X="deque" SRC="deque.c test.c" -f ../build/Makefile $@
-	@$(MAKE) X="list" SRC="list.c test.c" -f ../build/Makefile $@
-	@$(MAKE) X="tree" SRC="tree.c test.c" -f ../build/Makefile $@
-	@$(MAKE) X="splay" SRC="node.c assert.c splay.c" -f ../build/Makefile $@
-	@$(MAKE) X="utf8" SRC="utf8.c test.c" -f ../build/Makefile $@
+	+@$(MAKE) -C ../src GOALS=libb6.a R=$(CURDIR)/lib $@
+	+@$(MAKE) -f ../build/Makefile LDFLAGS="$(CURDIR)/lib/libb6.a -lpthread" $@

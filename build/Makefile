@@ -1,51 +1,113 @@
-CC=$(CROSS_COMPILE)gcc -fmessage-length=78
-AR=$(CROSS_COMPILE)ar
+.PHONY: all clean subdirs
+.NOTPARALLEL: clean
 
-CPPFLAGS=-MMD -MF "$(@:%.o=%.d)" -MT "$@ $(<:%.c=%.d)" $(EXTRA_CPPFLAGS)
-CFLAGS=$(CPPFLAGS) -Wall $(EXTRA_CFLAGS)
-LDFLAGS=$(EXTRA_LDFLAGS)
+# no default rules
+MAKEFLAGS+=-r
 
-CFLAGS_SO=-fPIC $(CFLAGS)
-LDFLAGS_SO=-shared -Wl,-soname,"$@" $(LDFLAGS)
+# no default variables
+MAKEFLAGS+=-R
 
-ifndef VERBOSE
-do = @(echo " $(1)"; $(2))
-else
-do = $(2)
+V?=0
+ifeq ($V,0)
+show=echo " $1 $(subst $(RROOT)/,,$2)"
+MAKEFLAGS+=-s
+MAKEFLAGS+=--no-print-directory
 endif
 
-OBJ+=$(SRC:.c=.o)
-SOBJ+=$(SRC:.c=.so)
-DEP=$(SRC:.c=.d)
+ifeq (,$(SROOT)) # -------------------------------------------------------------
 
-.PHONY: clean all
+R?=$(CURDIR)
+export RROOT:=$(abspath $R)
+export SROOT:=$(abspath $(CURDIR))
 
-all: $(X) $(A) $(L)
+export SELF:=$(SROOT)/$(firstword $(MAKEFILE_LIST))
+
+else # SROOT -------------------------------------------------------------------
+
+ifeq ($(origin SROOT),command line)
+$(error SROOT should not be specified from the command line)
+endif
+
+endif # SROOT ------------------------------------------------------------------
+
+include Build
+
+CC?=gcc
+LD?=ld
+RM?=rm -f
+RMDIR?=rmdir
+MKDIR?=mkdir -p
+
+submake=$(MAKE) -f $(SELF) $1 $2
+
+ifeq (,$T) # -------------------------------------------------------------------
+
+export cppflags:=$(CPPFLAGS)
+export cflags:=$(CFLAGS)
+export ldflags:=$(LDFLAGS)
+
+ifeq (,$(GOALS))
+all-goals:=$(bins) $(solibs)
+clean-goals:=$(all-goals) $(libs)
+else
+all-goals:=$(GOALS)
+clean-goals:=$(GOALS)
+endif
+
+all:
+	+@$(foreach t,$(all-goals),$(call submake,$@,T=$t)&&) true
 
 clean:
-ifneq ($(strip "$(X)"),"")
-	$(call do, "CLEAN $(X)", $(RM) $(X) $(OBJ) $(DEP))
+	+@$(foreach t,$(clean-goals),$(call submake,$@,T=$t);)
+
+else # T -----------------------------------------------------------------------
+
+subdir=$(subst $(RROOT),$(SROOT),$1)
+
+DIR:=$(subst $(SROOT),$(RROOT),$(CURDIR))
+OUT:=$(abspath $(addprefix $(DIR)/,$T))
+DEPS:=$(foreach t,$($T),$(addprefix $(DIR)/,$(patsubst %/,%/lib.a, $t)))
+RULES:=$(foreach t,$(filter %.o,$(DEPS)),$(t:.o=.d))
+
+cppflags+=$(cppflags-$T)
+cflags+=$(cflags-$T)
+ldflags+=$(ldflags-$T)
+
+all: subdirs | $(OUT)
+
+clean:
+	+$(foreach t,$(filter %.a,$(DEPS)),[ ! -d $(dir $t) ] || \
+		$(call submake,$@,-C $(call subdir,$(dir $t)) T=$(notdir $t));)
+	$(call show,"CLEAN","$(OUT)")
+	$(RM) $(OUT) $(DEPS) $(RULES)
+	$(RMDIR) $(DIR) 2> /dev/null || true
+
+subdirs:
+	+$(MKDIR) $(DIR) $(foreach t,$(filter %.a,$(DEPS)),&&\
+		$(call submake,all,-C $(call subdir,$(dir $t)) T=$(notdir $t)))
+
+$(OUT): $(DEPS)
+ifneq (,$(filter lib%.a,$T))
+	$(call show,"LINK","$@")
+	$(LD) -o $@ -r $^
 endif
-ifneq ($(strip "$(A)"),"")
-	$(call do, "CLEAN $(A)", $(RM) $(A) $(OBJ) $(DEP))
+ifneq (,$(filter $T,$(solibs)))
+	$(call show,"LINK","$@")
+	$(CC) -shared -Wl,-soname,$@ $(ldflags) -o $(OUT) $%
 endif
-ifneq ($(strip "$(L)"),"")
-	$(call do, "CLEAN $(L)", $(RM) $(L) $(SOBJ) $(DEP))
+ifneq (,$(filter $T,$(bins)))
+	$(call show,"EXEC","$@")
+	$(CC) -o $@ $^ $(ldflags)
 endif
 
-$(X): $(OBJ)
-	$(call do, "LINK  $@", $(CC) -o "$@" $^ $(LDFLAGS))
+$(DIR)/%.o: %.c
+	$(call show,"COMP","$@")
+	$(CC) -MMD -MT $@ $(cppflags) $(cflags) -o $@ -c $<
 
-$(L): $(SOBJ)
-	$(call do, "LINK  $@", $(CC)  -o "$@" $^ $(LDFLAGS_SO))
+$(DIR)/%.so: %.c
+	$(call show,"COMP","$@")
+	$(CC) -MMD -MT $@ $(cppflags) $(cflags) -fPIC -o $@ -c $<
 
-$(A): $(OBJ)
-	$(call do, "ARCH  $@", $(AR) -rcs "$@" $^ $(LDFLAGS))
+-include $(RULES)
 
-%.so: %.c
-	$(call do, "COMP  $@", $(CC) $(CFLAGS_SO) -c "$<" -o "$@")
-
-%.o: %.c
-	$(call do, "COMP  $@", $(CC) $(CFLAGS) -c "$<" -o "$@")
-
--include $(DEP)
+endif # T ----------------------------------------------------------------------

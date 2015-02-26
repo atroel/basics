@@ -1,0 +1,7 @@
+CPPFLAGS+=-I$(SROOT)/../include
+bins+=deque list tree splay utf8
+deque:=deque.o test.o
+list:=list.o test.o
+tree:=tree.o test.o
+splay:=splay.o node.o assert.o
+utf8:=utf8.o test.o
