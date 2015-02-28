@@ -209,11 +209,11 @@ static inline enum b6_json_error b6_json_serialize_value(
 
 #define b6_json_value_is_of(self, type) ((self)->ops == &b6_json_##type##_ops)
 
-#define b6_json_value_as_or_null(_self, _type) \
+#define b6_json_value_as_or_null(self, type) \
 ({ \
-	struct b6_json_value *self = (_self); \
-	self && b6_json_value_is_of(self, _type) ? \
-		b6_json_value_as(self, _type) : NULL; \
+	struct b6_json_value *_self = (self); \
+	_self && b6_json_value_is_of(_self, type) ? \
+		b6_json_value_as(_self, type) : NULL; \
 })
 
 const struct b6_json_value_ops b6_json_object_ops;
