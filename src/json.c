@@ -1288,3 +1288,15 @@ const struct b6_json_serializer_ops b6_json_default_serializer_ops = {
 	.enter_array_value = enter_array_value,
 	.leave_array_value = leave_array_value,
 };
+
+const char *b6_json_strerror(enum b6_json_error error)
+{
+	switch (error) {
+	case B6_JSON_OK: return "ok";
+	case B6_JSON_ERROR: return "error";
+	case B6_JSON_IO_ERROR: return "I/O error";
+	case B6_JSON_ALLOC_ERROR: return "allocation error";
+	case B6_JSON_PARSE_ERROR: return "parse error";
+	default: return "unknown error";
+	}
+}

@@ -14,6 +14,8 @@ enum b6_json_error {
 	B6_JSON_PARSE_ERROR = -4,
 };
 
+extern const char *b6_json_strerror(enum b6_json_error);
+
 struct b6_json_istream {
 	const struct b6_json_istream_ops *ops;
 	char c;
