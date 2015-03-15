@@ -266,8 +266,8 @@ static enum b6_json_error serialize_array(const struct b6_json_value *up,
 	if ((retval = helper->ops->enter_array(helper, os, self)))
 		return retval;
 	if (len) for (;;) {
-		int last = ++index == len;
-		struct b6_json_value *value = b6_json_get_array(self, index);
+		struct b6_json_value *value = b6_json_get_array(self, index++);
+		int last = index == len;
 		if ((retval = helper->ops->enter_array_value(helper, os,
 							     value)))
 			return retval;
@@ -298,30 +298,27 @@ static enum b6_json_error serialize_object(const struct b6_json_value *up,
 {
 	struct b6_json_object *self = b6_cast_of(up, struct b6_json_object, up);
 	struct b6_json_iterator iter;
-	const struct b6_json_pair *pair;
+	const struct b6_json_pair *curr, *next;
 	enum b6_json_error retval;
 	if ((retval = helper->ops->enter_object(helper, os, self)))
 		return retval;
 	b6_json_setup_iterator(&iter, self);
-	if ((pair = b6_json_get_iterator(&iter))) for (;;) {
-		int last;
+	for (curr = b6_json_get_iterator(&iter); curr; curr = next) {
+		b6_json_advance_iterator(&iter);
+		next = b6_json_get_iterator(&iter);
 		if ((retval = helper->ops->enter_object_key(helper, os,
-							    pair->key)))
+							    curr->key)))
 			return retval;
 		if ((retval = helper->ops->leave_object_key(helper, os,
-							    pair->key)))
+							    curr->key)))
 			return retval;
 		if ((retval = helper->ops->enter_object_value(helper, os,
-							      pair->value)))
+							      curr->value)))
 			return retval;
-		b6_json_advance_iterator(&iter);
-		last = !(pair = b6_json_get_iterator(&iter));
 		if ((retval = helper->ops->leave_object_value(helper, os,
-							      pair->value,
-							      last)))
+							      curr->value,
+							      !next)))
 			return retval;
-		if (last)
-			break;
 	}
 	return helper->ops->leave_object(helper, os, self);
 }
