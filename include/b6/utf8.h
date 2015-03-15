@@ -1,5 +1,12 @@
+/*
+ * Copyright (c) 2009-2015, Arnaud TROEL
+ * See LICENSE file for license details.
+ */
+
 #ifndef B6_UTF8_H
 #define B6_UTF8_H
+
+extern const void *b6_ascii_to_utf8(const char*, unsigned int*);
 
 static inline int b6_utf8_enc_len(unsigned int unicode)
 {

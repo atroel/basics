@@ -1,6 +1,6 @@
 cppflags+=-I$(abspath $(CURDIR)/../include)
 libb6.a:=allocator.o array.o clock.o cmdline.o event.o heap.o json.o list.o
-libb6.a+=pool.o registry.o splay.o tree.o
+libb6.a+=pool.o registry.o splay.o tree.o utf8.o
 libb6.so.1:=$(libb6.a:.o=.so)
 libs+=libb6.a
 solibs+=libb6.so.1
