@@ -443,8 +443,7 @@ static struct b6_json_array_impl *array_default_impl_new(
 
 struct b6_json_string_default_impl {
 	struct b6_json_string_impl up;
-	unsigned char *utf8;
-	unsigned int size;
+	struct b6_utf8_string utf8_string;
 };
 
 static void string_default_impl_dtor(struct b6_json_string_impl *up,
@@ -454,67 +453,49 @@ static void string_default_impl_dtor(struct b6_json_string_impl *up,
 		b6_cast_of(up, struct b6_json_string_default_impl, up);
 	struct b6_json_default_impl *default_impl =
 		b6_cast_of(impl, struct b6_json_default_impl, up);
-	b6_deallocate(default_impl->allocator, self->utf8);
+	b6_finalize_utf8_string(&self->utf8_string);
 	b6_pool_put(&default_impl->string_pool, self);
 }
 
-static unsigned int string_default_impl_size(
+static const struct b6_utf8 *string_default_impl_get(
 	const struct b6_json_string_impl *up)
 {
 	struct b6_json_string_default_impl *self = b6_cast_of(
 		up, struct b6_json_string_default_impl, up);
-	return self->size;
-}
-
-static const void *string_default_impl_utf8(
-	const struct b6_json_string_impl *up)
-{
-	struct b6_json_string_default_impl *self = b6_cast_of(
-		up, struct b6_json_string_default_impl, up);
-	return self->utf8;
+	return &self->utf8_string.utf8;
 }
 
 static enum b6_json_error string_default_impl_append(
 	struct b6_json_string_impl *up,
 	struct b6_json_impl *impl,
-	const void *utf8,
-	unsigned int size)
+	const struct b6_utf8 *utf8)
 {
 	struct b6_json_string_default_impl *self = b6_cast_of(
 		up, struct b6_json_string_default_impl, up);
-	struct b6_json_default_impl *default_impl =
-		b6_cast_of(impl, struct b6_json_default_impl, up);
-	const unsigned char *src;
-	unsigned char *dst;
-	unsigned int total_size = size + self->size;
-	if (total_size < size || total_size < self->size)
-		return B6_JSON_ERROR;
-	if (!(dst = b6_reallocate(default_impl->allocator, self->utf8,
-				  total_size)))
+	if (b6_extend_utf8_string(&self->utf8_string, utf8))
 		return B6_JSON_ALLOC_ERROR;
-	self->utf8 = dst;
-	for (src = utf8, dst += self->size; size--; *dst++ = *src++);
-	self->size = total_size;
 	return B6_JSON_OK;
 }
 
 static struct b6_json_string_impl *string_default_impl_new(
-	struct b6_json_impl *up)
+	struct b6_json_impl *up, const struct b6_utf8 *utf8)
 {
 	struct b6_json_default_impl *self =
 		b6_cast_of(up, struct b6_json_default_impl, up);
 	static const struct b6_json_string_impl_ops ops = {
 		.dtor = string_default_impl_dtor,
-		.size = string_default_impl_size,
-		.utf8 = string_default_impl_utf8,
+		.get = string_default_impl_get,
 		.append = string_default_impl_append,
 	};
 	struct b6_json_string_default_impl *impl;
 	if (!(impl = b6_pool_get(&self->string_pool)))
 		return NULL;
 	impl->up.ops = &ops;
-	impl->utf8 = NULL;
-	impl->size = 0;
+	b6_initialize_utf8_string(&impl->utf8_string, self->allocator);
+	if (utf8 && b6_extend_utf8_string(&impl->utf8_string, utf8)) {
+		b6_pool_put(&self->string_pool, impl);
+		return NULL;
+	}
 	return &impl->up;
 }
 
@@ -532,26 +513,22 @@ static enum b6_json_error serialize_string(const struct b6_json_value *up,
 	struct b6_json_string *self = b6_cast_of(up, struct b6_json_string, up);
 	struct b6_json_string_default_impl *impl = b6_cast_of(
 		self->impl, struct b6_json_string_default_impl, up);
-	const unsigned char *utf8 = impl->utf8;
-	unsigned int size = impl->size;
+	struct b6_utf8_iterator iter;
+	b6_setup_utf8_iterator(&iter, &impl->utf8_string.utf8);
 	if (b6_json_ostream_write(os, &quote, 1) != 1)
 		return B6_JSON_IO_ERROR;
-	while (size) {
-		int utf8_len = b6_utf8_dec_len(utf8);
-		if (utf8_len > 1) {
-			if (size < utf8_len)
-				break;
-			/* Possible encoding errors are copied. */
-			if (b6_json_ostream_write(os, utf8,
-						  utf8_len) != utf8_len)
+	while (b6_utf8_iterator_has_next(&iter)) {
+		unsigned int unicode = b6_utf8_iterator_get_next(&iter);
+		if (unicode >= 128) {
+			unsigned char utf8[4];
+			int len = b6_utf8_enc_len(unicode);
+			b6_assert(len > 0);
+			b6_utf8_enc(len, unicode, utf8);
+			if (b6_json_ostream_write(os, utf8, len) != len)
 				return B6_JSON_IO_ERROR;
-			utf8 += utf8_len;
-			size -= utf8_len;
-			continue;
-		}
-		if (utf8_len == 1) {
+		} else {
 			char escape[2] = { '\\', '\0' };
-			escape[1] = *utf8;
+			escape[1] = unicode;
 			switch (escape[1]) {
 			case '\"':
 			case '\\':
@@ -589,8 +566,6 @@ static enum b6_json_error serialize_string(const struct b6_json_value *up,
 					return B6_JSON_IO_ERROR;
 			}
 		}
-		utf8 += 1;
-		size -= 1;
 	}
 	if (b6_json_ostream_write(os, &quote, 1) != 1)
 		return B6_JSON_IO_ERROR;
@@ -623,11 +598,10 @@ static enum b6_json_error object_default_impl_add(
 		b6_cast_of(impl, struct b6_json_default_impl, up);
 	struct b6_json_pair_default *default_pair =
 		b6_pool_get(&default_impl->pair_pool);
+	const struct b6_utf8 *utf8 = b6_json_get_string(pair->key);
 	if (!default_pair)
 		return B6_JSON_ALLOC_ERROR;
-	if (b6_register_utf8(&self->registry, &default_pair->entry,
-			     b6_json_string_utf8(pair->key),
-			     b6_json_string_size(pair->key))) {
+	if (b6_register(&self->registry, &default_pair->entry, utf8)) {
 		b6_pool_put(&default_impl->pair_pool, default_pair);
 		return B6_JSON_ERROR;
 	}
@@ -682,25 +656,11 @@ static struct b6_json_pair *object_default_impl_walk(
 
 static struct b6_json_pair *object_default_impl_at(
 	struct b6_json_object_impl *up,
-	const char *key)
+	const struct b6_utf8 *key)
 {
 	struct b6_json_object_default_impl *self =
 		b6_cast_of(up, struct b6_json_object_default_impl, up);
 	struct b6_entry *entry = b6_lookup_registry(&self->registry, key);
-	if (!entry)
-		return NULL;
-	return &b6_cast_of(entry, struct b6_json_pair_default, entry)->pair;
-}
-
-struct b6_json_pair *object_default_impl_at_utf8(
-	struct b6_json_object_impl *up,
-	const void *utf8,
-	unsigned int size)
-{
-	struct b6_json_object_default_impl *self =
-		b6_cast_of(up, struct b6_json_object_default_impl, up);
-	struct b6_entry *entry =
-		b6_lookup_registry_utf8(&self->registry, utf8, size);
 	if (!entry)
 		return NULL;
 	return &b6_cast_of(entry, struct b6_json_pair_default, entry)->pair;
@@ -733,7 +693,6 @@ static struct b6_json_object_impl *object_default_impl_new(
 		.add = object_default_impl_add,
 		.del = object_default_impl_del,
 		.at = object_default_impl_at,
-		.at_utf8 = object_default_impl_at_utf8,
 		.first = object_default_impl_first,
 		.walk = object_default_impl_walk,
 	};
@@ -790,6 +749,7 @@ static enum b6_json_error parse_string(struct b6_json_string *self,
 	char c;
 	int i;
 	for (;;) {
+		struct b6_utf8 utf8;
 		unsigned int unicode;
 		int utf8_len;
 		char utf8_buf[4];
@@ -800,24 +760,28 @@ static enum b6_json_error parse_string(struct b6_json_string *self,
 		if (c == quote)
 			break;
 		if (c != backslash) {
-			int ret, len = b6_utf8_dec_len(&c);
-			if (len < 1) {
+			int ret;
+			utf8_len = b6_utf8_dec_len(&c);
+			if (utf8_len < 1) {
 				retval = B6_JSON_PARSE_ERROR;
 				break;
 			}
-			ret = b6_json_istream_read(is, &utf8_buf[1], len - 1);
-			if (ret != len - 1) {
+			ret = b6_json_istream_read(is, &utf8_buf[1],
+						   utf8_len - 1);
+			if (ret != utf8_len - 1) {
 				retval = B6_JSON_IO_ERROR;
 				break;
 			}
 			utf8_buf[0] = c;
-			if (b6_utf8_dec(len, &unicode, utf8_buf) != len) {
+			if (b6_utf8_dec(utf8_len, &unicode, utf8_buf) !=
+			    utf8_len) {
 				retval = B6_JSON_PARSE_ERROR;
 				break;
 			}
+			b6_setup_utf8(&utf8, utf8_buf, utf8_len);
 			if ((retval = self->impl->ops->append(self->impl,
 							      self->json->impl,
-							      utf8_buf, len)))
+							      &utf8)))
 				break;
 			continue;
 		}
@@ -827,31 +791,31 @@ static enum b6_json_error parse_string(struct b6_json_string *self,
 		}
 		if (c == quote || c == backslash || c == slash) {
 			retval = self->impl->ops->append(
-				self->impl, self->json->impl, &c, sizeof(c));
+				self->impl, self->json->impl, &b6_utf8_char[c]);
 			if (retval)
 				break;
 			continue;
 		}
 		if (c == 'b') {
 			retval = self->impl->ops->append(
-				self->impl, self->json->impl, &backspace,
-				sizeof(backspace));
+				self->impl, self->json->impl,
+				&b6_utf8_char[backspace]);
 			if (retval)
 				break;
 			continue;
 		}
 		if (c == 'f') {
 			retval = self->impl->ops->append(
-				self->impl, self->json->impl, &formfeed,
-				sizeof(formfeed));
+				self->impl, self->json->impl,
+				&b6_utf8_char[formfeed]);
 			if (retval)
 				break;
 			continue;
 		}
 		if (c == 'n') {
 			retval = self->impl->ops->append(
-				self->impl, self->json->impl, &newline,
-				sizeof(newline));
+				self->impl, self->json->impl,
+				&b6_utf8_char[newline]);
 			if (retval)
 				break;
 			continue;
@@ -859,15 +823,15 @@ static enum b6_json_error parse_string(struct b6_json_string *self,
 		if (c == 'r') {
 			retval = self->impl->ops->append(
 				self->impl, self->json->impl,
-				&carriage_return, sizeof(carriage_return));
+				&b6_utf8_char[carriage_return]);
 			if (retval)
 				break;
 			continue;
 		}
 		if (c == 't') {
-			retval = self->impl->ops->append(
-				self->impl, self->json->impl, &tab,
-				sizeof(tab));
+			retval = self->impl->ops->append(self->impl,
+							 self->json->impl,
+							 &b6_utf8_char[tab]);
 			if (retval)
 				break;
 			continue;
@@ -904,8 +868,9 @@ static enum b6_json_error parse_string(struct b6_json_string *self,
 			return B6_JSON_PARSE_ERROR;
 		if (b6_utf8_enc(utf8_len, unicode, utf8_buf) != utf8_len)
 			continue;
+		b6_setup_utf8(&utf8, utf8_buf, utf8_len);
 		retval = self->impl->ops->append(self->impl, self->json->impl,
-						 utf8_buf, utf8_len);
+						 &utf8);
 		if (retval)
 			break;
 	}

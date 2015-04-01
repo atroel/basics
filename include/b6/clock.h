@@ -278,7 +278,7 @@ struct b6_named_clock {
  * @return -1 if a clock has already been registered with the same name.
  */
 static inline int b6_register_named_clock(struct b6_named_clock *self,
-					  const char *name)
+					  const struct b6_utf8 *name)
 {
 	return b6_register(&b6_named_clock_registry, &self->entry, name);
 }
@@ -299,7 +299,8 @@ static inline void b6_unregister_named_clock(struct b6_named_clock *self)
  * @return a pointer to the named clock.
  * @return NULL if the named clock was not found.
  */
-static inline struct b6_named_clock *b6_lookup_named_clock(const char *name)
+static inline struct b6_named_clock *b6_lookup_named_clock(
+	const struct b6_utf8 *name)
 {
 	struct b6_entry *entry = b6_lookup_registry(&b6_named_clock_registry,
 						    name);

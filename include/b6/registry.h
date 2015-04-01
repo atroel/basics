@@ -5,16 +5,17 @@
 
 /**
  * @file registry.h
- * @brief Store and retrieve objects by name.
+ * @brief Store and retrieve objects by id.
  */
 
 #ifndef B6_REGISTRY_H
 #define B6_REGISTRY_H
 
 #include "b6/tree.h"
+#include "b6/utf8.h"
 
 /**
- * @brief A registry stores named entries and allows quick lookups by name.
+ * @brief A registry stores named entries and allows quick lookups by id.
  *
  * Registries can be populated and searched like this:
  *
@@ -27,14 +28,14 @@
  *
  * B6_REGISTRY_DEFINE(example_registry);
  *
- * int register_example(struct example *example, const char *name)
+ * int register_example(struct example *example, const char *id)
  * {
- *   return b6_register(&example->entry, name);
+ *   return b6_register(&example->entry, id);
  * }
  *
- * struct example *lookup_example_by_name(const char *name)
+ * struct example *lookup_example_by_id(const char *id)
  * {
- *   struct b6_entry *e = b6_lookup_registry(name);
+ *   struct b6_entry *e = b6_lookup_registry(id);
  *   return entry ? b6_cast_of(e, struct example, entry) : NULL;
  * }
  * @endcode
@@ -69,9 +70,8 @@ struct b6_registry {
  */
 struct b6_entry {
 	struct b6_tref tref;
-	unsigned short int hash;
-	unsigned short int size;
-	const void *name;
+	unsigned int hash;
+	const struct b6_utf8 *id;
 };
 
 /**
@@ -93,20 +93,10 @@ static inline void b6_setup_registry(struct b6_registry *self)
  * @brief Add an entry to a registry.
  * @param self specifies the registry to populate.
  * @param entry specifies the entry to add.
- * @param name specifies the ascii name of the entry.
+ * @param id specifies the id of the entry.
  */
 extern int b6_register(struct b6_registry *self, struct b6_entry *entry,
-		       const char *name);
-
-/**
- * @brief Add an entry to a registry.
- * @param self specifies the registry to populate.
- * @param entry specifies the entry to add.
- * @param name specifies the utf8 name of the entry.
- * @param size specifies the size in bytes of the name.
- */
-extern int b6_register_utf8(struct b6_registry *self, struct b6_entry *entry,
-			    const void *name, unsigned int size);
+		       const struct b6_utf8 *id);
 
 /**
  * @brief Remove an entry from a registry.
@@ -123,26 +113,14 @@ static inline void b6_unregister(struct b6_registry *self,
 }
 
 /**
- * @brief Find a registry entry by name.
+ * @brief Find a registry entry by id.
  * @param self specifies the registry to search.
- * @param name specifies the ascii name of the entry to find.
+ * @param id specifies the ascii id of the entry to find.
  * @return a pointer to the entry.
- * @return NULL if no entry with such a name was found.
+ * @return NULL if no entry with such a id was found.
  */
 extern struct b6_entry *b6_lookup_registry(struct b6_registry *self,
-					   const char *name);
-
-/**
- * @brief Find a registry entry by name.
- * @param self specifies the registry to search.
- * @param name specifies the utf8 name of the entry to find.
- * @param size specifies the size in bytes of the name.
- * @return a pointer to the entry.
- * @return NULL if no entry with such a name was found.
- */
-extern struct b6_entry *b6_lookup_registry_utf8(struct b6_registry *self,
-						const void *name,
-						unsigned long size);
+					   const struct b6_utf8 *id);
 
 /**
  * @brief Get the first entry of a registry in the sequential order.

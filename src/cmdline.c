@@ -125,7 +125,7 @@ static char *dash_to_underscore(char *s)
 
 B6_REGISTRY_DEFINE(b6_flag_registry);
 
-static struct b6_flag *b6_lookup_flag(const char *name)
+static struct b6_flag *b6_lookup_flag(const struct b6_utf8 *name)
 {
 	struct b6_entry *entry = b6_lookup_registry(&b6_flag_registry, name);
 	return entry ? b6_cast_of(entry, struct b6_flag, entry) : NULL;
@@ -135,6 +135,7 @@ int b6_parse_command_line_flags(int argc, char *argv[], int strict)
 {
 	int argn, argf;
 	for (argn = argf = 1; argn < argc; argn += 1) {
+		struct b6_utf8 slice;
 		char *name = argv[argn];
 		char *value;
 		struct b6_flag *flag;
@@ -148,12 +149,16 @@ int b6_parse_command_line_flags(int argc, char *argv[], int strict)
 		argv[argf] = name;
 		if ((value = b6_strchr(name, '=')))
 			*value++ = '\0';
-		if ((flag = b6_lookup_flag(name)))
+		b6_utf8_from_ascii(&slice, name);
+		if ((flag = b6_lookup_flag(&slice)))
 			b6_parse_flag(flag, value);
-		else if ((flag = b6_lookup_flag(dash_to_underscore(name))))
-			b6_parse_flag(flag, value);
-		else if (strict)
-			return -argf;
+		else {
+			dash_to_underscore(name);
+			if ((flag = b6_lookup_flag(&slice)))
+				b6_parse_flag(flag, value);
+			else if (strict)
+				return -argf;
+		}
 		argf += 1;
 	}
 	return argf;

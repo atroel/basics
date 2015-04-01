@@ -5,6 +5,7 @@
 #include "b6/array.h"
 #include "b6/pool.h"
 #include "b6/tree.h"
+#include "b6/utf8.h"
 
 enum b6_json_error {
 	B6_JSON_OK = 0,
@@ -123,7 +124,8 @@ struct b6_json_impl {
 
 struct b6_json_impl_ops {
 	struct b6_json_array_impl *(*array_impl)(struct b6_json_impl*);
-	struct b6_json_string_impl *(*string_impl)(struct b6_json_impl*);
+	struct b6_json_string_impl *(*string_impl)(struct b6_json_impl*,
+						   const struct b6_utf8*);
 	struct b6_json_object_impl *(*object_impl)(struct b6_json_impl*);
 };
 
@@ -307,68 +309,44 @@ struct b6_json_string_impl {
 
 struct b6_json_string_impl_ops {
 	void (*dtor)(struct b6_json_string_impl*, struct b6_json_impl*);
-	unsigned int (*size)(const struct b6_json_string_impl*);
-	const void *(*utf8)(const struct b6_json_string_impl*);
+	const struct b6_utf8 *(*get)(const struct b6_json_string_impl*);
 	enum b6_json_error (*append)(struct b6_json_string_impl*,
 				     struct b6_json_impl*,
-				     const void*, unsigned int);
+				     const struct b6_utf8*);
 };
 
-static inline unsigned int b6_json_string_size
-(const struct b6_json_string *self)
-{
-	return self->impl->ops->size(self->impl);
-}
-
-static inline const void *b6_json_string_utf8(const struct b6_json_string *self)
-{
-	return self->impl->ops->utf8(self->impl);
-}
-
-static inline struct b6_json_string *b6_json_new_string(struct b6_json *json,
-							const char *str);
-
-static inline enum b6_json_error b6_json_set_string(struct b6_json_string *self,
-						    const char *utf8,
-						    unsigned int size)
-{
-	struct b6_json_string *temp;
-	enum b6_json_error error;
-	if (!size)
-		return B6_JSON_OK;
-	if (!(temp = b6_json_new_string(self->json, NULL)))
-		return B6_JSON_ALLOC_ERROR;
-	if (!(error = temp->impl->ops->append(temp->impl, temp->json->impl,
-					      utf8, size))) {
-		struct b6_json_string_impl *impl = self->impl;
-		self->impl = temp->impl;
-		temp->impl = impl;
-	}
-	b6_json_unref_value(&temp->up);
-	return B6_JSON_OK;
-}
-
-static inline struct b6_json_string *b6_json_new_string(struct b6_json *json,
-							const char *str)
+static inline struct b6_json_string *b6_json_new_string(
+	struct b6_json *json, const struct b6_utf8 *slice)
 {
 	struct b6_json_string *self;
 	if (!(self = b6_pool_get(&json->pool)))
 		return NULL;
-	if (!(self->impl = json->impl->ops->string_impl(json->impl))) {
+	if (!(self->impl = json->impl->ops->string_impl(json->impl, slice))) {
 		b6_pool_put(&json->pool, self);
 		return NULL;
 	}
 	b6_json_setup_value(&self->up, &b6_json_string_ops);
 	self->json = json;
-	if (str) {
-		const char *end;
-		for (end = str; *end; end += 1);
-		if (b6_json_set_string(self, str, end - str)) {
-			b6_json_unref_value(&self->up);
-			return NULL;
-		}
-	}
 	return self;
+}
+
+static inline const struct b6_utf8 *b6_json_get_string(
+	const struct b6_json_string *self)
+{
+	return self->impl->ops->get(self->impl);
+}
+
+static inline enum b6_json_error b6_json_set_string(
+	struct b6_json_string *self, const struct b6_utf8 *slice)
+{
+	struct b6_json_string_impl *impl = self->impl;
+	struct b6_json_string *temp = b6_json_new_string(self->json, slice);
+	if (!temp)
+		return B6_JSON_ALLOC_ERROR;
+	self->impl = temp->impl;
+	temp->impl = impl;
+	b6_json_unref_value(&temp->up);
+	return B6_JSON_OK;
 }
 
 struct b6_json_array_impl {
@@ -401,8 +379,8 @@ static inline struct b6_json_value *b6_json_get_array(
 }
 
 static inline void b6_json_set_array(struct b6_json_array *self,
-					unsigned int index,
-					struct b6_json_value *value)
+				     unsigned int index,
+				     struct b6_json_value *value)
 {
 	b6_precond(index < b6_json_array_len(self));
 	self->impl->ops->set(self->impl, index, value);
@@ -450,9 +428,7 @@ struct b6_json_object_impl_ops {
 				  struct b6_json_pair *pair);
 	struct b6_json_pair *(*first)(struct b6_json_object_impl*);
 	struct b6_json_pair *(*at)(struct b6_json_object_impl*,
-				   const char*);
-	struct b6_json_pair *(*at_utf8)(struct b6_json_object_impl*,
-					const void*, unsigned int);
+				   const struct b6_utf8*);
 	struct b6_json_pair *(*walk)(struct b6_json_object_impl*,
 				     struct b6_json_pair*, int);
 };
@@ -466,20 +442,10 @@ static inline void b6_json_setup_iterator(struct b6_json_iterator *self,
 
 static inline void b6_json_setup_iterator_at(struct b6_json_iterator *self,
 					     const struct b6_json_object *obj,
-					     const char *key)
+					     const struct b6_utf8 *key)
 {
 	self->object = obj;
 	self->pair = obj->impl->ops->at(obj->impl, key);
-}
-
-static inline void b6_json_setup_iterator_at_utf8(
-	struct b6_json_iterator *self,
-	const struct b6_json_object *object,
-	const void *utf8,
-	unsigned int size)
-{
-	self->object = object;
-	self->pair = object->impl->ops->at_utf8(object->impl, utf8, size);
 }
 
 static inline const struct b6_json_pair *b6_json_get_iterator(
@@ -496,7 +462,7 @@ static inline void b6_json_advance_iterator(struct b6_json_iterator *self)
 
 static inline struct b6_json_value *b6_json_get_object(
 	const struct b6_json_object *self,
-	const char *key)
+	const struct b6_utf8 *key)
 {
 	struct b6_json_iterator iter;
 	const struct b6_json_pair *pair;
@@ -505,28 +471,12 @@ static inline struct b6_json_value *b6_json_get_object(
 	return pair ? pair->value : NULL;
 }
 
-static inline struct b6_json_value *b6_json_get_object_utf8(
-	const struct b6_json_object *self,
-	const void *key,
-	unsigned int len)
-{
-	struct b6_json_iterator iter;
-	const struct b6_json_pair *pair;
-	b6_json_setup_iterator_at_utf8(&iter, self, key, len);
-	pair = b6_json_get_iterator(&iter);
-	return pair ? pair->value : NULL;
-}
-
 #define b6_json_get_object_as(_self, _key, _type) \
 	b6_json_value_as_or_null(b6_json_get_object(_self, _key), _type)
 
-#define b6_json_get_object_utf8_as(_self, _key, _len, _type) \
-	b6_json_value_as_or_null( \
-		b6_json_get_object_utf8(_self, _key, _len), _type)
-
 static inline enum b6_json_error b6_json_set_object(
 	struct b6_json_object *self,
-	const char *key,
+	const struct b6_utf8 *key,
 	struct b6_json_value *value)
 {
 	struct b6_json_object_impl *impl = self->impl;
@@ -543,33 +493,6 @@ static inline enum b6_json_error b6_json_set_object(
 		return B6_JSON_ALLOC_ERROR;
 	temp.value = value;
 	error = self->impl->ops->add(self->impl, self->json->impl, &temp);
-	if (error)
-		b6_json_unref_value(&temp.key->up);
-	return error;
-}
-
-static inline enum b6_json_error b6_json_set_object_utf8(
-	struct b6_json_object *self,
-	const void *key, unsigned int len,
-	struct b6_json_value *value)
-{
-	struct b6_json_object_impl *impl = self->impl;
-	struct b6_json_pair *pair =
-		(struct b6_json_pair*)impl->ops->at_utf8(impl, key, len);
-	struct b6_json_pair temp;
-	enum b6_json_error error;
-	if (pair) {
-		b6_json_unref_value(pair->value);
-		pair->value = value;
-		return B6_JSON_OK;
-	}
-	if (!(temp.key = b6_json_new_string(self->json, NULL)))
-		return B6_JSON_ALLOC_ERROR;
-	if ((error = b6_json_set_string(temp.key, key, len)))
-		goto bail_out;
-	temp.value = value;
-	error = self->impl->ops->add(self->impl, self->json->impl, &temp);
-bail_out:
 	if (error)
 		b6_json_unref_value(&temp.key->up);
 	return error;

@@ -6,9 +6,10 @@
 #ifndef B6_UTF8_H
 #define B6_UTF8_H
 
-extern const void *b6_ascii_to_utf8(const char*, unsigned int*);
+#include "b6/allocator.h"
+#include "b6/utils.h"
 
-static inline int b6_utf8_enc_len(unsigned int unicode)
+static inline unsigned int b6_utf8_enc_len(unsigned int unicode)
 {
 	if (unicode < 0x80)
 		return 1;
@@ -18,10 +19,10 @@ static inline int b6_utf8_enc_len(unsigned int unicode)
 		return 3;
 	if (unicode < 0x200000)
 		return 4;
-	return -1;
+	return 0;
 }
 
-static inline int b6_utf8_enc(int len, unsigned int unicode, void *buf)
+static inline int b6_utf8_enc(unsigned int len, unsigned int unicode, void *buf)
 {
 	unsigned char *utf8 = buf;
 	switch (len) {
@@ -65,7 +66,7 @@ static inline int b6_utf8_enc(int len, unsigned int unicode, void *buf)
 	return len;
 }
 
-static inline int b6_utf8_dec_len(const void *buf)
+static inline unsigned int b6_utf8_dec_len(const void *buf)
 {
 	unsigned int c = *(const unsigned char*)buf;
 	if (!(c & 0x80))
@@ -76,10 +77,11 @@ static inline int b6_utf8_dec_len(const void *buf)
 		return 3;
 	if ((c & 0xf8) == 0xf0)
 		return 4;
-	return -1;
+	return 0;
 }
 
-static inline int b6_utf8_dec(int len, unsigned int *unicode, const void *buf)
+static inline int b6_utf8_dec(unsigned int len, unsigned int *unicode,
+			      const void *buf)
 {
 	const unsigned char *utf8 = buf;
 	unsigned int c = *utf8++;
@@ -144,6 +146,179 @@ static inline int b6_utf8_dec(int len, unsigned int *unicode, const void *buf)
 	default:
 		return -1;
 	}
+}
+
+struct b6_utf8_iterator {
+	const struct b6_utf8 *utf8;
+	const char *ptr;
+	unsigned int nchars;
+};
+
+struct b6_utf8 {
+	const char *ptr;
+	unsigned int nbytes;
+	unsigned int nchars;
+};
+
+struct b6_utf8_string {
+	struct b6_utf8 utf8;
+	struct b6_allocator *allocator;
+	unsigned int capacity;
+};
+
+extern const struct b6_utf8 b6_utf8_char[128];
+
+#define B6_DEFINE_UTF8(ascii) { \
+	.ptr = (ascii), \
+	.nbytes = sizeof(ascii) - 1, \
+	.nchars = sizeof(ascii) - 1, \
+}
+
+#define B6_UTF8(ascii) ({ \
+	static const struct b6_utf8 utf8 = B6_DEFINE_UTF8(ascii); \
+	&utf8; \
+})
+
+#define B6_CLONE_UTF8(utf8) { \
+	.ptr = (utf8)->ptr, \
+	.nbytes = (utf8)->nbytes, \
+	.nchars = (utf8)->nchars, \
+}
+
+extern struct b6_utf8 *b6_utf8_from_ascii(struct b6_utf8 *self,
+					  const char *asciiz);
+
+static inline struct b6_utf8 *b6_clone_utf8(struct b6_utf8 *self,
+					    const struct b6_utf8 *utf8)
+{
+	self->ptr = utf8->ptr;
+	self->nbytes = utf8->nbytes;
+	self->nchars = utf8->nchars;
+	return self;
+}
+
+extern struct b6_utf8 *b6_setup_utf8(struct b6_utf8 *self,
+				     const void *utf8_data,
+				     unsigned int utf8_size);
+
+static inline int b6_utf8_is_empty(const struct b6_utf8* self)
+{
+	return !self->nchars;
+}
+
+static inline void b6_swap_utf8(struct b6_utf8 *self, struct b6_utf8 *utf8)
+{
+	const char *ptr = self->ptr;
+	unsigned int nbytes = self->nbytes;
+	unsigned int nchars = self->nchars;
+	self->ptr = utf8->ptr;
+	self->nbytes = utf8->nbytes;
+	self->nchars = utf8->nchars;
+	utf8->ptr = ptr;
+	utf8->nbytes = nbytes;
+	utf8->nchars = nchars;
+}
+
+static inline void b6_utf8_to(struct b6_utf8 *self,
+			      const struct b6_utf8_iterator *iter)
+{
+	self->ptr = iter->utf8->ptr;
+	self->nchars = iter->utf8->nchars - iter->nchars;
+	self->nbytes = iter->ptr - iter->utf8->ptr;
+}
+
+static inline void b6_utf8_from(struct b6_utf8 *self,
+				const struct b6_utf8_iterator *iter)
+{
+	self->ptr = iter->ptr;
+	self->nchars = iter->nchars;
+	self->nbytes = iter->utf8->nbytes - (iter->ptr - iter->utf8->ptr);
+}
+
+static inline struct b6_utf8_iterator *b6_clone_utf8_iterator(
+	struct b6_utf8_iterator *self, struct b6_utf8_iterator *iter)
+{
+	self->utf8= iter->utf8;
+	self->ptr = iter->ptr;
+	self->nchars = iter->nchars;
+	return self;
+}
+
+static inline struct b6_utf8_iterator *b6_setup_utf8_iterator(
+	struct b6_utf8_iterator *self, const struct b6_utf8 *utf8)
+{
+	self->utf8 = utf8;
+	self->ptr = utf8->ptr;
+	self->nchars = utf8->nchars;
+	return self;
+}
+
+static inline int b6_utf8_iterator_has_next(const struct b6_utf8_iterator *self)
+{
+	return !!self->nchars;
+}
+
+static inline unsigned int b6_utf8_iterator_get_next(
+	struct b6_utf8_iterator *self)
+{
+	unsigned int len = b6_utf8_dec_len(self->ptr);
+	unsigned int unicode;
+	if (len <= 0 || b6_utf8_dec(len, &unicode, self->ptr) <= 0)
+		return -1;
+	self->ptr += len;
+	self->nchars -= 1;
+	return unicode;
+}
+
+static inline struct b6_utf8_string *b6_initialize_utf8_string(
+	struct b6_utf8_string *self, struct b6_allocator *allocator)
+{
+	self->allocator = allocator;
+	self->capacity = 0;
+	self->utf8.ptr = NULL;
+	self->utf8.nbytes = self->utf8.nchars = 0;
+	return self;
+}
+
+static inline void b6_finalize_utf8_string(struct b6_utf8_string *self)
+{
+	b6_deallocate(self->allocator, (void*)self->utf8.ptr);
+}
+
+static inline void b6_swap_utf8_string(struct b6_utf8_string *self,
+				       struct b6_utf8_string *utf8_string)
+{
+	struct b6_allocator *allocator = self->allocator;
+	unsigned int capacity = self->capacity;
+	self->allocator = utf8_string->allocator;
+	self->capacity = utf8_string->capacity;
+	utf8_string->allocator = allocator;
+	utf8_string->capacity = capacity;
+	b6_swap_utf8(&self->utf8, &utf8_string->utf8);
+}
+
+static inline void b6_clear_utf8_string(struct b6_utf8_string *self)
+{
+	struct b6_utf8_string temp;
+	b6_initialize_utf8_string(&temp, self->allocator);
+	b6_swap_utf8_string(&temp, self);
+	b6_finalize_utf8_string(&temp);
+}
+
+extern int b6_extend_utf8_string(struct b6_utf8_string *self,
+				 const struct b6_utf8 *utf8);
+
+static inline int b6_append_utf8_string(struct b6_utf8_string *self,
+					unsigned int unicode)
+{
+	unsigned int len;
+	unsigned char buf[4];
+	struct b6_utf8 utf8;
+	if (!(len = b6_utf8_enc_len(unicode)))
+		return -3;
+	if (b6_utf8_enc(len, unicode, buf) != len)
+		return -2;
+	return b6_extend_utf8_string(self, b6_setup_utf8(&utf8, buf, len));
 }
 
 #endif /* B6_UTF8_H */

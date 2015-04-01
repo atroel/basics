@@ -12,6 +12,7 @@
 #define CMDLINE_H
 
 #include "b6/registry.h"
+#include "b6/utf8.h"
 #include "b6/utils.h"
 
 /**
@@ -61,10 +62,11 @@
 	b6_ctor(b6_flag_initialize_ ## _var); \
 	static void b6_flag_initialize_ ## _var(void) \
 	{ \
+		static const struct b6_utf8 utf8 = B6_DEFINE_UTF8(_name); \
 		struct b6_flag *flag = &flag_ ## _var; \
 		flag->ops = &b6_ ## _type ## _flag_ops; \
 		flag->ptr = &_var; \
-		b6_register(&b6_flag_registry, &flag->entry, _name); \
+		b6_register(&b6_flag_registry, &flag->entry, &utf8); \
 		(void) ((b6_flag_type_ ## _type*)0 == &_var); \
 	} \
 	static struct b6_flag flag_ ## _var
@@ -128,11 +130,12 @@ struct b6_cmd_ops {
 	b6_ctor(b6_cmd_register_##_fun); \
 	static void b6_cmd_register_##_fun(void) \
 	{ \
-		b6_register(&b6_cmd_registry, &(_fun##_cmd).entry, #_fun); \
+		static const struct b6_utf8 slice = B6_DEFINE_UTF8(#_fun); \
+		b6_register(&b6_cmd_registry, &(_fun##_cmd).entry, &slice); \
 	} \
 	static void b6_cmd_register_##_fun(void)
 
-static inline struct b6_cmd *b6_lookup_cmd(const char *name)
+static inline struct b6_cmd *b6_lookup_cmd(const struct b6_utf8 *name)
 {
 	const struct b6_entry *e = b6_lookup_registry(&b6_cmd_registry, name);
 	return e ? b6_cast_of(e, struct b6_cmd, entry) : NULL;
