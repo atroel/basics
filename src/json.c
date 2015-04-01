@@ -165,11 +165,11 @@ static enum b6_json_error serialize_uint(unsigned long long int u,
 	char *const end = tmp + sizeof(tmp);
 	char *ptr = end;
 	long int len;
-	while (u > 0) {
+	do {
 		unsigned int d = u % 10;
 		u /= 10;
 		*--ptr = d + '0';
-	}
+	} while (u > 0);
 	len = end - ptr;
 	return b6_json_ostream_write(os, ptr, len) != len ? B6_JSON_IO_ERROR :
 		B6_JSON_OK;
