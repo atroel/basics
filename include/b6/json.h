@@ -378,6 +378,9 @@ static inline struct b6_json_value *b6_json_get_array(
 	return self->impl->ops->get(self->impl, index);
 }
 
+#define b6_json_get_array_as(_self, _key, _type) \
+	b6_json_value_as_or_null(b6_json_get_array(_self, _key), _type)
+
 static inline void b6_json_set_array(struct b6_json_array *self,
 				     unsigned int index,
 				     struct b6_json_value *value)
@@ -425,7 +428,7 @@ struct b6_json_object_impl_ops {
 				  const struct b6_json_pair *pair);
 	enum b6_json_error (*del)(struct b6_json_object_impl*,
 				  struct b6_json_impl*,
-				  struct b6_json_pair *pair);
+				  const struct b6_json_pair *pair);
 	struct b6_json_pair *(*first)(struct b6_json_object_impl*);
 	struct b6_json_pair *(*at)(struct b6_json_object_impl*,
 				   const struct b6_utf8*);
@@ -458,6 +461,21 @@ static inline void b6_json_advance_iterator(struct b6_json_iterator *self)
 {
 	self->pair = self->object->impl->ops->walk(self->object->impl,
 						   self->pair, B6_NEXT);
+}
+
+static inline void b6_json_del_object(const struct b6_json_object *self,
+				      const struct b6_json_pair *pair)
+{
+	if (pair)
+		self->impl->ops->del(self->impl, self->json->impl, pair);
+}
+
+static inline void b6_json_del_object_at(const struct b6_json_object *self,
+					 const struct b6_utf8 *key)
+{
+	struct b6_json_iterator iter;
+	b6_json_setup_iterator_at(&iter, self, key);
+	b6_json_del_object(self, b6_json_get_iterator(&iter));
 }
 
 static inline struct b6_json_value *b6_json_get_object(

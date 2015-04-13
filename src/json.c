@@ -613,7 +613,7 @@ static enum b6_json_error object_default_impl_add(
 static enum b6_json_error object_default_impl_del(
 	struct b6_json_object_impl *up,
 	struct b6_json_impl *impl,
-	struct b6_json_pair *pair)
+	const struct b6_json_pair *pair)
 {
 	struct b6_json_object_default_impl *self =
 		b6_cast_of(up, struct b6_json_object_default_impl, up);
