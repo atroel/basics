@@ -411,10 +411,10 @@ static void array_default_impl_dtor(struct b6_json_array_impl *up,
 		b6_cast_of(up, struct b6_json_array_default_impl, up);
 	struct b6_json_default_impl *default_impl =
 		b6_cast_of(impl, struct b6_json_default_impl, up);
-	struct b6_json_value *values = b6_array_get(&self->array, 0);
+	struct b6_json_value **values = b6_array_get(&self->array, 0);
 	unsigned int i = b6_array_length(&self->array);
 	while (i--)
-		b6_json_unref_value(values);
+		b6_json_unref_value(*values++);
 	b6_array_finalize(&self->array);
 	b6_pool_put(&default_impl->array_pool, self);
 }
