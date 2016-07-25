@@ -220,13 +220,13 @@ static inline enum b6_json_error b6_json_serialize_value(
 		b6_json_value_as(_self, type) : NULL; \
 })
 
-const struct b6_json_value_ops b6_json_object_ops;
-const struct b6_json_value_ops b6_json_number_ops;
-const struct b6_json_value_ops b6_json_string_ops;
-const struct b6_json_value_ops b6_json_array_ops;
-const struct b6_json_value_ops b6_json_false_ops;
-const struct b6_json_value_ops b6_json_true_ops;
-const struct b6_json_value_ops b6_json_null_ops;
+extern const struct b6_json_value_ops b6_json_object_ops;
+extern const struct b6_json_value_ops b6_json_number_ops;
+extern const struct b6_json_value_ops b6_json_string_ops;
+extern const struct b6_json_value_ops b6_json_array_ops;
+extern const struct b6_json_value_ops b6_json_false_ops;
+extern const struct b6_json_value_ops b6_json_true_ops;
+extern const struct b6_json_value_ops b6_json_null_ops;
 
 static inline void b6_json_initialize(struct b6_json *self,
 				      struct b6_json_impl *impl,
